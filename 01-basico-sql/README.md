@@ -1,294 +1,217 @@
-# Guia Definitivo: SQL Básico, SecOps e Administração de PostgreSQL
-
-> **Documentação Consolidada — Aulas 01, 02 e 03**  
-> *Foco em Segurança da Informação (SecOps), Modelagem Defensiva, Resolução de Problemas e Boas Práticas.*
-
----
-
-## 📋 Sumário
-1. [Módulo 1: Configuração e Instalação (Como Configurar)](#1-módulo-1-configuração-e-instalação-como-configurar)
-   - [1.1 Instalação do PostgreSQL no Linux](#11-instalação-do-postgresql-no-linux)
-   - [1.2 Provisionamento Seguro de Usuário e Banco](#12-provisionamento-seguro-de-usuário-e-banco)
-   - [1.3 Correção de Permissões no PostgreSQL 15/16 (`schema public`)](#13-correção-de-permissões-no-postgresql-1516-schema-public)
-   - [1.4 Configuração do DBeaver e Firewall (`pg_hba.conf`)](#14-configuração-do-dbeaver-e-firewall-pg_hbaconf)
-2. [Módulo 2: Modelagem e Criação de Tabelas (Como Fazer)](#2-módulo-2-modelagem-e-criação-de-tabelas-como-fazer)
-   - [2.1 Tipagem Defensiva de Dados](#21-tipagem-defensiva-de-dados)
-   - [2.2 Criação da Tabela com Restrições (`DDL`)](#22-criação-da-tabela-com-restrições-ddl)
-3. [Módulo 3: Manipulação e Consultas Avançadas (DML & DQL)](#3-módulo-3-manipulação-e-consultas-avançadas-dml--dql)
-   - [3.1 Inserção Simples e em Lote (*Batch Insert*)](#31-inserção-simples-e-em-lote-batch-insert)
-   - [3.2 Testes de Estresse e Travas de Integridade](#32-testes-de-estresse-e-travas-de-integridade)
-   - [3.3 Consultas Defensivas (`WHERE`, `LIKE`, `ORDER BY`, `LIMIT`, `OFFSET`)](#33-consultas-defensivas-where-like-order-by-limit-offset)
-   - [3.4 Ordem Gramatical Obrigatória do SQL](#34-ordem-gramatical-obrigatória-do-sql)
-4. [Módulo 4: Rotinas de Limpeza, Rollback e Purga (Como Desfazer)](#4-módulo-4-rotinas-de-limpeza-rollback-e-purga-como-desfazer)
-   - [4.1 Transações de Segurança (`BEGIN` / `ROLLBACK`)](#41-transações-de-segurança-begin--rollback)
-   - [4.2 Remoção Controlada de Objetos (`DROP`)](#42-remoção-controlada-de-objetos-drop)
-   - [4.3 Purga Total do Sistema (Reset Completo do Ambiente)](#43-purga-total-do-sistema-reset-completo-do-ambiente)
+# 🛡️ Manual Completo de SQL Básico, Administração & SecOps
+> **Projeto Âncora:** Sistema de Gestão de TI (Ativos, Usuários e Infraestrutura)  
+> **Filosofia de Aprendizado:** Método *Shokunin* (Artesanato Técnico) & *SecOps* (Segurança Operacional em Primeiro Lugar)
 
 ---
 
-## 1. Módulo 1: Configuração e Instalação (Como Configurar)
+## 🏛️ MÓDULO 1 — Arquitetura do Banco, Conexão & Troubleshooting de Rede
 
-### 1.1 Instalação do PostgreSQL no Linux
-Execute os comandos no terminal Linux para instalar o motor do PostgreSQL e utilitários de segurança:
-
-```bash
-# 1. Atualizar listas de pacotes
-sudo apt update
-
-# 2. Instalar PostgreSQL e utilitários de auditoria/criptografia (postgresql-contrib)
-sudo apt install postgresql postgresql-contrib -y
-
-# 3. Verificar se o serviço está ativo
-sudo systemctl status postgresql
-```
+### 1.1 Arquitetura do PostgreSQL no Linux
+* **SGBD (Sistema de Gerenciamento de Banco de Dados):** Intermediário seguro ("portaria armada") que gerencia o acesso físico aos dados em disco.
+* **Isolamento de Processos (Princípio do Menor Privilégio - PoLP):** O PostgreSQL roda sob um usuário de sistema isolado chamado `postgres`, sem acesso de administrador (`root`) ao Linux.
+* **Separacao de Responsabilidades:**
+  * **Superusuário (`postgres`):** Usado apenas para criar bancos, gerenciar usuários e conceder privilégios.
+  * **Usuário de Aplicação (`<SEU_USUARIO_DB>`):** Usuário com privilégios limitados para uso do dia a dia no DBeaver e aplicações.
 
 ---
 
-### 1.2 Provisionamento Seguro de Usuário e Banco
-Por padrão, o Linux isola o acesso do PostgreSQL no usuário do sistema `postgres`. Acesse o console administrativo master para provisionar a base e a conta de desenvolvimento:
-
-```bash
-# Acessar o console como superusuário postgres
-sudo -i -u postgres psql
-```
-
-Dentro do prompt administrativo (`postgres=#`), execute:
-
-```sql
--- 1. Criar o banco de dados dedicado
-CREATE DATABASE <NOME_DO_BANCO>;
-
--- 2. Criar o usuário de desenvolvimento com senha forte
-CREATE USER <SEU_USUARIO_DB> WITH PASSWORD '<SUA_SENHA_SEGURA>';
-
--- 3. Conceder privilégios de acesso ao banco de dados
-GRANT ALL PRIVILEGES ON DATABASE <NOME_DO_BANCO> TO <SEU_USUARIO_DB>;
-
--- 4. Sair do psql
-\q
-```
+### 1.2 Resolução de Erros de Conexão e Firewall (`pg_hba.conf`)
+* **O Problema:** Ao tentar conectar uma ferramenta externa (como DBeaver) usando o IP da placa de rede local (ex: `192.168.x.x`), o banco retorna:
+  `FATAL: no pg_hba.conf entry for host "..."`
+* **Causa Raiz:** O arquivo `/etc/postgresql/16/main/pg_hba.conf` é o firewall interno do Postgres. Por *hardening* padrão, ele aceita conexões apenas da interface local *loopback* (`127.0.0.1`).
+* **A Solução SecOps:** No DBeaver, configure o campo **Host** estritamente para `127.0.0.1` (ou `localhost`), evitando expor a porta 5432 para redes externas desnecessariamente.
 
 ---
 
-### 1.3 Correção de Permissões no PostgreSQL 15/16 (`schema public`)
-A partir do PostgreSQL 15, o esquema `public` vem bloqueado por padrão (*hardening*) para usuários comuns. Ao tentar rodar um `CREATE TABLE` como usuário de desenvolvimento, o banco retornará:
-> `ERROR: permission denied for schema public`
+### 1.3 Resolução de Erros de Permissão no PostgreSQL 16
+* **O Problema:** Ao tentar criar tabelas com o usuário de aplicação, o Postgres retorna:
+  `ERROR: permission denied for schema public`
+* **Causa Raiz:** A partir da versão 15 do PostgreSQL, o esquema público (`public`) vem bloqueado para usuários comuns por motivos de segurança.
+* **A Solução:** Entrar como superusuário `postgres` e executar a concessão explícita de permissão:
+  ```sql
+  -- Acessar o banco de destino
+  \c <NOME_DO_BANCO>
 
-**Solução:** Entrar no banco desejado com a conta `postgres` e liberar a permissão de criação:
-
-```bash
-sudo -i -u postgres psql
-```
-
-```sql
--- Conectar ao banco específico
-\c <NOME_DO_BANCO>
-
--- Liberar a criação de objetos no esquema público para o usuário
-GRANT CREATE ON SCHEMA public TO <SEU_USUARIO_DB>;
-
--- Sair
-\q
-```
+  -- Conceder permissão de criação no schema public
+  GRANT CREATE ON SCHEMA public TO <SEU_USUARIO_DB>;
+  ```
 
 ---
 
-### 1.4 Configuração do DBeaver e Firewall (`pg_hba.conf`)
+## 🏗️ MÓDULO 2 — DDL (Data Definition Language) & Tipagem Defensiva
 
-#### Diagnóstico de Erro Comum de Rede:
-Se o DBeaver retornar o erro:
-> `FATAL: no pg_hba.conf entry for host "<IP_LOCAL>", user "<SEU_USUARIO_DB>", database "<NOME_DO_BANCO>"`
+### 2.1 A Regra de Ouro da Tipagem de Dados
+Para escolher a tipagem correta de cada coluna, pergunte-se: **"Vou realizar cálculos matemáticos (soma, média, multiplicação) com esse dado?"**
+* **NÃO** $ightarrow$ Use **`VARCHAR`** (Texto), mesmo que o valor contenha apenas números!
+* **SIM** $ightarrow$ Use tipos numéricos (**`INTEGER`**, **`NUMERIC`**).
 
-Isso significa que o arquivo de firewall interno do PostgreSQL (`pg_hba.conf`) bloqueou a conexão por vir do IP da placa de rede.
-
-#### Soluções:
-* **Solução Rápida no DBeaver:** Na janela de conexão do DBeaver, ajuste o campo **Host** para `127.0.0.1` (ou `localhost`).
-* **Solução via Arquivo de Configuração do Server (`pg_hba.conf`):**
-  1. Edite o arquivo no terminal:
-     ```bash
-     sudo nano /etc/postgresql/16/main/pg_hba.conf
-     ```
-  2. Adicione ao final do arquivo a linha de permissão:
-     ```text
-     host    all             <SEU_USUARIO_DB>    127.0.0.1/32            scram-sha-256
-     ```
-  3. Recarregue as configurações sem derrubar o servidor:
-     ```bash
-     sudo systemctl reload postgresql
-     ```
-
----
-
-## 2. Módulo 2: Modelagem e Criação de Tabelas (Como Fazer)
-
-### 2.1 Tipagem Defensiva de Dados
-A escolha de tipos de dados é a primeira linha de defesa (*Defense in Depth*) de uma aplicação:
-
-| Tipo de Dado | Quando Usar | Risco/Ataque Evitado |
+#### Guia de Decisão por Campo:
+| Dado | Tipo Correto | Motivo do Tipo |
 | :--- | :--- | :--- |
-| `VARCHAR(N)` | Textos com tamanho previsível (e-mail, nome, telefone, CEP). | **Evita DoS:** Impedir que o envio de textos gigantes esgote a memória RAM do servidor. |
-| `NUMERIC(P, S)` | Valores financeiros e moedas exatas. | **Evita erros de auditoria:** `FLOAT` gera dízimas binárias que fazem centavos desaparecerem. |
-| `SERIAL` / `BIGSERIAL` | Chaves primárias numéricas auto-incrementáveis (`1, 2, 3...`). | Garante identificador único e exclusivo para cada linha. |
-| `TIMESTAMP WITH TIME ZONE` | Registrar data/hora de eventos e auditorias. | Preserva o fuso horário correto para logs de segurança. |
-| `VARCHAR(60)` | Coluna de senha (`senha_hash`). | **Nunca salve senha em texto puro!** Guarde apenas o hash gerado por algoritmos como `bcrypt`. |
+| **Telefone / Celular** | `VARCHAR(15)` | Não faz conta; preserva o zero inicial (`0800`, `011`) e símbolos (`+`, `-`, `()`). |
+| **CPF / CNPJ / RG / CEP** | `VARCHAR(14)` / `VARCHAR(9)` | Preserva zeros à esquerda (`01001-000`) e formatos com pontos e traços. |
+| **Endereço / Nº Casa** | `VARCHAR(150)` / `VARCHAR(20)`| Números residenciais contêm letras ou complementos (ex: `123-A`, `S/N`, `KM 45`). |
+| **Quantidade em Estoque** | `INTEGER` | Contagem inteira usada em somas e subtrações de inventário. |
+| **Valores Financeiros** | `NUMERIC(10, 2)` | Garante precisão decimal exata com 2 casas para centavos. **Nunca use `FLOAT`** em finanças (evita dízimas binárias ocultas). |
+| **Campos de Entrada (Formulários)**| `VARCHAR(N)` limitado | **Proteção contra DoS:** Impede injeção de arquivos gigabytes que esgotam a memória RAM do servidor. |
 
 ---
 
-### 2.2 Criação da Tabela com Restrições (`DDL`)
-
-Conecte-se ao banco e execute o comando de criação com travas de integridade:
+### 2.2 Comandos DDL de Estrutura e Destruição
 
 ```sql
-CREATE TABLE usuarios_sistema (
-    -- Chave Primária Única Auto-incrementável
+-- 1. Criar a Tabela Principal do Sistema de Gestão de TI
+CREATE TABLE ativos_ti (
     id SERIAL PRIMARY KEY,
-
-    -- Campos Obrigatórios (NOT NULL)
-    nome VARCHAR(100) NOT NULL,
-
-    -- Restrição de Unicidade (UNIQUE)
-    email VARCHAR(100) UNIQUE NOT NULL,
-
-    -- Armazenamento seguro de Hash de Senha
-    senha_hash VARCHAR(60) NOT NULL,
-
-    -- Registro de Data e Fuso Horário
-    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    nome_equipamento VARCHAR(100) NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    valor NUMERIC(10, 2) NOT NULL
 );
+
+-- 2. Modificar Estruturas (ALTER TABLE)
+ALTER TABLE ativos_ti ADD COLUMN numero_patrimonio VARCHAR(30) UNIQUE;
+ALTER TABLE ativos_ti ALTER COLUMN nome_equipamento TYPE VARCHAR(150);
+ALTER TABLE ativos_ti DROP COLUMN numero_patrimonio;
+
+-- 3. Comandos de Destruição e Esvaziamento (DIFERENÇAS CRÍTICAS)
+-- Apaga todas as linhas instantaneamente e reseta o ID SERIAL (Estrutura mantida)
+TRUNCATE TABLE ativos_ti;
+
+-- Destrói a estrutura da tabela e todos os seus dados no banco
+DROP TABLE IF EXISTS ativos_ti;
+
+-- Destrói o BANCO DE DADOS INTEIRO no disco (Executar fora da conexão do banco!)
+DROP DATABASE <NOME_DO_BANCO>;
 ```
 
 ---
 
-## 3. Módulo 3: Manipulação e Consultas Avançadas (DML & DQL)
+## 💾 MÓDULO 3 — DML (Data Manipulation Language) & Transações ACID
 
-### 3.1 Inserção Simples e em Lote (*Batch Insert*)
+### 3.1 Inserção de Dados (`INSERT`)
 
 ```sql
--- Inserção de um único registro
-INSERT INTO usuarios_sistema (nome, email, senha_hash)
-VALUES ('Usuario Exemplo', 'usuario@exemplo.com.br', '$2b$12$eImiTXuWVxfM37uY4JANjO8W1.A91q484$s0hashseguro');
+-- Inserção de Registro Único
+INSERT INTO ativos_ti (nome_equipamento, tipo, status, valor)
+VALUES ('Dell Latitude 3420', 'Notebook', 'Em Uso', 4500.00);
 
--- Inserção em Lote (Batch Insert - Mais performático)
-INSERT INTO usuarios_sistema (nome, email, senha_hash) VALUES 
-('Ana Silva', 'ana.silva@exemplo.com.br', '$2b$12$hashSeguroAna123456789012345678901234567890123'),
-('Carlos Eduardo', 'carlos.eduardo@empresa.com', '$2b$12$hashSeguroCarlos23456789012345678901234567890'),
-('Beatriz Mendes', 'beatriz.mendes@exemplo.com.br', '$2b$12$hashSeguroBia34567890123456789012345678901234');
+-- Inserção em Lote (Batch Insert - Alta Performance)
+INSERT INTO ativos_ti (nome_equipamento, tipo, status, valor) VALUES
+('Servidor Dell PowerEdge R750', 'Servidor', 'Em Uso', 35000.00),
+('Switch Cisco SG350', 'Switch', 'Disponivel', 2800.00),
+('ThinkPad E14', 'Notebook', 'Manutencao', 4200.00),
+('Notebook HP ProBook', 'Notebook', 'Disponivel', 3800.00),
+('Firewall Fortigate 60F', 'Seguranca', 'Em Uso', 8500.00);
 ```
 
 ---
 
-### 3.2 Testes de Estresse e Travas de Integridade
+### 3.2 A Rede de Proteção de Transações: `BEGIN`, `ROLLBACK` e `COMMIT`
+Toda operação manual de alteração (`UPDATE`) ou exclusão (`DELETE`) deve utilizar a trava de transação para evitar perdas catastróficas acidentais por falta da cláusula `WHERE`.
 
-1. **Teste de Campo Obrigatório (`NOT NULL`):**
-   ```sql
-   INSERT INTO usuarios_sistema (nome, email, senha_hash) 
-   VALUES (NULL, 'semnome@exemplo.com', '$2b$12$hash12345');
-   ```
-   *Resultado Esperado:* `ERROR: null value in column "nome" violates not-null constraint`.
+* 🟢 **`BEGIN;`** Abre o "modo rascunho". As alterações ficam isoladas na sua sessão sem gravar no disco.
+* 🔴 **`ROLLBACK;`** O "botão de pânico". Apaga o rascunho e restaura os dados ao estado original.
+* 🔵 **`COMMIT;`** "Passa a caneta permanente". Grava todas as alterações definitivamente no disco rígido.
 
-2. **Teste de Duplicidade (`UNIQUE`):**
-   ```sql
-   INSERT INTO usuarios_sistema (nome, email, senha_hash) 
-   VALUES ('Impostor', 'usuario@exemplo.com.br', '$2b$12$hash12345');
-   ```
-   *Resultado Esperado:* `ERROR: duplicate key value violates unique constraint "usuarios_sistema_email_key"`.
+#### O Ritual Sagrado dos 4 Passos para Modificações Manuais:
+1. Executar **`BEGIN;`**
+2. Executar o **`UPDATE`** ou **`DELETE`**
+3. Executar o **`SELECT` de conferência ocular** para validar na grade
+4. Executar **`COMMIT;`** (se estiver perfeito) ou **`ROLLBACK;`** (se errou a mira)
 
 ---
 
-### 3.3 Consultas Defensivas (`WHERE`, `LIKE`, `ORDER BY`, `LIMIT`, `OFFSET`)
+### 3.3 Alteração (`UPDATE`) e Remoção (`DELETE`) Seguras
 
 ```sql
--- Consulta Filtrada por Sufixo de E-mail
-SELECT id, nome, email 
-FROM usuarios_sistema 
-WHERE email LIKE '%@exemplo.com.br';
-
--- Consulta com Ordenação e Paginação de Segurança (Evita travar RAM)
-SELECT id, nome, email, criado_em
-FROM usuarios_sistema
-WHERE email LIKE '%@exemplo.com.br'   -- 1. Filtro
-ORDER BY criado_em DESC                -- 2. Ordenação (mais recentes primeiro)
-LIMIT 10                               -- 3. Máximo de registros retornados
-OFFSET 0;                              -- 4. Registros a pular (Paginação)
-```
-
-> 🛡️ **Alerta de SecOps (Evitando DoS):** Nunca rode `SELECT *` sem `LIMIT` em produção. Exigir `LIMIT` garante que consultas não sobrecarreguem a memória RAM do servidor web.
-
----
-
-### 3.4 Ordem Gramatical Obrigatória do SQL
-Para evitar erros de sintaxe, escreva as cláusulas na seguinte sequência exata:
-1. `SELECT`
-2. `FROM`
-3. `WHERE`
-4. `ORDER BY`
-5. `LIMIT`
-6. `OFFSET`
-
----
-
-## 4. Módulo 4: Rotinas de Limpeza, Rollback e Purga (Como Desfazer)
-
-### 4.1 Transações de Segurança (`BEGIN` / `ROLLBACK`)
-Sempre utilize blocos de transação ao testar comandos destrutivos ou alterações de dados (`UPDATE` / `DELETE`):
-
-```sql
--- 1. Iniciar o modo de teste seguro
+-- Exemplo de UPDATE Seguro com a Mira WHERE
 BEGIN;
 
--- 2. Executar a alteração ou remoção
-DELETE FROM usuarios_sistema WHERE id = 1;
+UPDATE ativos_ti 
+SET status = 'Manutencao'
+WHERE id = 1;
 
--- 3. Caso perceba que cometeu um erro, DESFAÇA IMEDIATAMENTE:
-ROLLBACK;
+-- Conferência
+SELECT * FROM ativos_ti WHERE id = 1;
 
--- 4. Se e somente se o resultado estiver 100% correto, CONFIRME:
--- COMMIT;
+-- Confirmar gravação
+COMMIT;
+
+-- Exemplo de DELETE Seguro com a Mira WHERE
+BEGIN;
+
+DELETE FROM ativos_ti 
+WHERE id = 3;
+
+-- Conferência
+SELECT * FROM ativos_ti WHERE id = 3;
+
+-- Confirmar gravação
+COMMIT;
 ```
 
 ---
 
-### 4.2 Remoção Controlada de Objetos (`DROP`)
+## 🔍 MÓDULO 4 — DQL (Data Query Language) & Filtros Avançados
 
-Se você desejar apagar tabelas ou bancos específicos no DBeaver ou psql:
+### 4.1 Cláusulas Essenciais de Consulta
 
 ```sql
--- Apagar uma tabela inteira
-DROP TABLE IF EXISTS usuarios_sistema;
+-- 1. SELECT com Apelidos de Coluna (AS)
+SELECT 
+    nome_equipamento AS equipamento,
+    valor AS preco
+FROM ativos_ti;
 
--- Apagar um banco de dados (Conectado em outro banco)
-DROP DATABASE IF EXISTS <NOME_DO_BANCO>;
+-- 2. Filtros Comparativos (WHERE) e Lógicos (AND, OR, NOT)
+SELECT * FROM ativos_ti
+WHERE tipo = 'Notebook' AND status = 'Em Uso';
 
--- Remover um usuário
-DROP USER IF EXISTS <SEU_USUARIO_DB>;
+-- 3. Intervalo (BETWEEN) e Lista de Valores (IN)
+SELECT * FROM ativos_ti
+WHERE valor BETWEEN 3000.00 AND 10000.00;
+
+SELECT * FROM ativos_ti
+WHERE status IN ('Em Uso', 'Disponivel');
+
+-- 4. Busca por Padrões de Texto (LIKE / ILIKE com Curinga %)
+-- LIKE: Diferencia maiúsculas/minúsculas. ILIKE: Ignora case no Postgres.
+SELECT * FROM ativos_ti WHERE nome_equipamento ILIKE 'Dell%';    -- Começa com
+SELECT * FROM ativos_ti WHERE nome_equipamento ILIKE '%Pad%';     -- Contém
+SELECT * FROM ativos_ti WHERE nome_equipamento ILIKE '%Cisco';   -- Termina com
+
+-- 5. Ordenação (ORDER BY ASC/DESC)
+SELECT * FROM ativos_ti
+ORDER BY valor DESC;
+
+-- 6. Limitação e Paginação (LIMIT e OFFSET - Proteção contra DoS)
+SELECT * FROM ativos_ti
+ORDER BY valor DESC
+LIMIT 2 OFFSET 0; -- Retorna os 2 primeiros (Página 1)
 ```
 
 ---
 
-### 4.3 Purga Total do Sistema (Reset Completo do Ambiente)
-Se você precisar desinstalar completamente o PostgreSQL do seu Linux Mint para praticar a instalação do zero:
+### 4.2 Ordem Sintática Obrigatória do PostgreSQL
+O PostgreSQL exige rigorosamente esta ordem ao montar a query:
 
-```bash
-# 1. Parar o serviço do banco
-sudo systemctl stop postgresql
-
-# 2. Desinstalar software e expurgar configurações
-sudo apt purge postgresql postgresql-contrib postgresql-client -y
-sudo apt autoremove -y
-
-# 3. Limpar manualmente os diretórios de dados e logs
-sudo rm -rf /etc/postgresql/
-sudo rm -rf /etc/postgresql-common/
-sudo rm -rf /var/lib/postgresql/
-sudo rm -rf /var/log/postgresql/
-
-# 4. Remover usuários de sistema invisíveis
-sudo deluser postgres
-sudo delgroup postgres
+```sql
+SELECT colunas                   -- 1. O que mostrar
+FROM tabela                      -- 2. De onde buscar
+WHERE condicoes                  -- 3. Como filtrar
+ORDER BY coluna_ordenacao DESC   -- 4. Como ordenar
+LIMIT quantidade                 -- 5. Quantos retornar
+OFFSET pulo;                     -- 6. Quantos pular
 ```
 
-Para validar a purga total:
-```bash
-psql --version
-# Retorno esperado: command not found
-```
+---
+
+## 🔑 MÓDULO 5 — Credenciais Sanitizadas do Laboratório Local
+
+* **Host / Servidor:** `127.0.0.1`
+* **Porta:** `5432`
+* **Usuário de Aplicação:** `<SEU_USUARIO_DB>`
+* **Senha:** `<SUA_SENHA_SEGURA>`
+* **Bancos de Dados:** `<NOME_DO_BANCO>`
+* **Superusuário Linux/Postgres:** `postgres`
