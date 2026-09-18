@@ -1,10 +1,3 @@
-	Aqui está o **`README.md` completo e padronizado em nível de Engenharia de Dados e SecOps**, pronto para você copiar, colar e salvar na raiz do seu repositório no Linux Mint.
-
-Ele foi documentado com foco em **arquitetura defensiva, governança de acesso e rastreabilidade**, explicando exatamente as decisões técnicas para qualquer recrutador ou gestor que visitar o seu GitHub.
-
----
-
-```markdown
 # 🛡️ PostgreSQL SecOps Audit Pipeline
 
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-blue?logo=postgresql&logoColor=white)
@@ -118,13 +111,4 @@ Desenvolvido por **Maxswell Diniz**
 [![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/SEU_USUARIO)
 ```
 
----
 
-### 🧠 PERGUNTA DE FIXAÇÃO (Como combinado, para você exercitar o raciocínio!)
-
-Para validar se você está pronto para subir esse repositório:
-
-Imagine que você está apresentando esse repositório para um entrevistador técnico e ele te faz a seguinte pergunta:
-> *"Max, por que você usou o tipo `INET` na coluna `ip_origem` em vez de simplesmente criar como `VARCHAR(15)` ou `TEXT`?"*
-
-**Como você responderia a ele com base nas boas práticas de engenharia e SecOps que aprendemos?**
